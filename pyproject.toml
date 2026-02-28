@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mcp-mysql-explorer"
-version = "0.1.0"
+version = "0.1.1"
 description = "MCP server for querying MySQL databases — let AI agents explore schemas, run queries, and manage data via Model Context Protocol."
 readme = "README.md"
 license = "MIT"
@@ -38,7 +38,7 @@ Repository = "https://github.com/xsg22/mcp-mysql-explorer"
 Issues = "https://github.com/xsg22/mcp-mysql-explorer/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/mcp_mysql_server"]
+packages = ["src/mcp_mysql_explorer"]
 
 [project.scripts]
-mcp-mysql-server = "mcp_mysql_server.server:main"
+mcp-mysql-server = "mcp_mysql_explorer.server:main"

@@ -118,7 +118,7 @@ mcp-mysql-server --host localhost --user root --password secret --database mydb
 mcp-mysql-server
 
 # As a Python module
-python -m mcp_mysql_server --host localhost --database mydb
+python -m mcp_mysql_explorer --host localhost --database mydb
 ```
 
 ## Security Notes

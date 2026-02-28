@@ -31,7 +31,7 @@ mcp-mysql/
 ├── .gitignore
 ├── .env                              # 本地连接配置（不发布）
 └── src/
-    └── mcp_mysql_server/
+    └── mcp_mysql_explorer/
         ├── __init__.py               # 版本号
         ├── __main__.py               # python -m 支持
         └── server.py                 # MCP 服务主程序
