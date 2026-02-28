@@ -1,0 +1,98 @@
+---
+description: MCP MySQL Explorer 项目规范
+globs: "**/*"
+alwaysApply: true
+---
+
+# MCP MySQL Explorer 项目规范
+
+## 项目概述
+
+基于 Model Context Protocol (MCP) 的 MySQL 数据库查询服务，已发布到 PyPI。
+- **PyPI**: https://pypi.org/project/mcp-mysql-explorer/
+- **安装**: `pip install mcp-mysql-explorer`
+- **命令**: `mcp-mysql-server`
+
+## 技术栈
+
+- **运行时**: Python >= 3.10
+- **MCP SDK**: mcp[cli] >= 1.2.0 (FastMCP)
+- **MySQL 驱动**: PyMySQL >= 1.1.0
+- **构建工具**: hatchling
+- **传输协议**: stdio
+
+## 项目结构
+
+```
+mcp-mysql/
+├── pyproject.toml                    # 包元数据 & 依赖
+├── README.md                         # PyPI / GitHub 文档
+├── LICENSE                           # MIT
+├── .gitignore
+├── .env                              # 本地连接配置（不发布）
+└── src/
+    └── mcp_mysql_server/
+        ├── __init__.py               # 版本号
+        ├── __main__.py               # python -m 支持
+        └── server.py                 # MCP 服务主程序
+```
+
+## 连接配置方式
+
+支持三种配置方式，优先级：**命令行参数 > 环境变量 > .env 文件**
+
+### 命令行参数
+```
+mcp-mysql-server --host HOST --port PORT --user USER --password PASS --database DB
+```
+
+### 环境变量
+`MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`
+
+### .env 文件
+工作目录下 `.env` 文件自动加载
+
+## MCP 工具清单
+
+| 工具名 | 功能 | 安全级别 |
+|--------|------|----------|
+| `list_tables` | 列出所有表 | 只读 |
+| `describe_table` | 查看表结构（含字段注释） | 只读 |
+| `query` | 执行 SELECT/SHOW/DESCRIBE/EXPLAIN 查询 | 只读 |
+| `execute_sql` | 执行写入 SQL（INSERT/UPDATE/DELETE/DDL） | 读写 |
+| `get_table_indexes` | 查看表索引 | 只读 |
+| `get_create_table` | 获取建表语句 | 只读 |
+| `get_database_info` | 获取数据库概览 | 只读 |
+
+## 安全设计
+
+- `query` 工具仅允许 SELECT/SHOW/DESCRIBE/EXPLAIN 语句
+- `execute_sql` 工具可执行写入操作，自动提交或回滚
+- 标识符使用反引号包裹防止 SQL 注入
+- 查询结果最多返回 1000 行
+
+## Cursor MCP 配置示例
+
+```json
+{
+  "mcpServers": {
+    "mysql": {
+      "command": "mcp-mysql-server",
+      "args": [
+        "--host", "your-host",
+        "--port", "3306",
+        "--user", "your-user",
+        "--password", "your-password",
+        "--database", "your-database"
+      ]
+    }
+  }
+}
+```
+
+## 发布流程
+
+```bash
+python -m build
+python -m twine upload dist/*
+```
