@@ -30,7 +30,7 @@ Open **Cursor Settings → MCP**, add a new server. Three ways to configure the 
 {
   "mcpServers": {
     "mysql": {
-      "command": "mcp-mysql-server",
+      "command": "mcp-mysql-explorer",
       "args": [
         "--host", "your-mysql-host",
         "--port", "3306",
@@ -49,7 +49,7 @@ Open **Cursor Settings → MCP**, add a new server. Three ways to configure the 
 {
   "mcpServers": {
     "mysql": {
-      "command": "mcp-mysql-server",
+      "command": "mcp-mysql-explorer",
       "env": {
         "MYSQL_HOST": "your-mysql-host",
         "MYSQL_PORT": "3306",
@@ -80,7 +80,7 @@ Then simply:
 {
   "mcpServers": {
     "mysql": {
-      "command": "mcp-mysql-server"
+      "command": "mcp-mysql-explorer"
     }
   }
 }
@@ -96,7 +96,7 @@ Add to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "mysql": {
-      "command": "mcp-mysql-server",
+      "command": "mcp-mysql-explorer",
       "args": [
         "--host", "your-mysql-host",
         "--user", "your-user",
@@ -112,10 +112,10 @@ Add to your `claude_desktop_config.json`:
 
 ```bash
 # With command-line arguments
-mcp-mysql-server --host localhost --user root --password secret --database mydb
+mcp-mysql-explorer --host localhost --user root --password secret --database mydb
 
 # With .env file
-mcp-mysql-server
+mcp-mysql-explorer
 
 # As a Python module
 python -m mcp_mysql_explorer --host localhost --database mydb
