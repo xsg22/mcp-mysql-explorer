@@ -1,6 +1,8 @@
 # MCP MySQL Server
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that connects AI agents (Cursor, Claude Desktop, etc.) to MySQL databases — enabling schema exploration, data querying, and SQL execution through natural language.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that connects AI agents (Cursor, Claude Desktop, etc.) to MySQL databases, enabling schema exploration, data querying, and SQL execution through natural language.
+
+Chinese docs: [README.zh.md](README.zh.md)
 
 ## Features
 
@@ -9,7 +11,7 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that co
 | `list_tables` | List all tables in the database |
 | `describe_table` | View table schema with column types and comments |
 | `query` | Execute read-only queries (SELECT / SHOW / DESCRIBE / EXPLAIN) |
-| `execute_sql` | Execute write operations (INSERT / UPDATE / DELETE / DDL) |
+| `execute_sql` | Execute write operations (INSERT / UPDATE / DELETE / DDL), disabled in read-only mode |
 | `get_table_indexes` | Show all indexes of a table |
 | `get_create_table` | Get the CREATE TABLE statement |
 | `get_database_info` | Get database overview (version, size, table count) |
@@ -22,7 +24,7 @@ pip install mcp-mysql-explorer
 
 ## Usage in Cursor
 
-Open **Cursor Settings → MCP**, add a new server. Three ways to configure the database connection:
+Open **Cursor Settings -> MCP**, add a new server. Three ways to configure the database connection:
 
 ### Option 1: Command-line arguments (recommended)
 
@@ -43,6 +45,23 @@ Open **Cursor Settings → MCP**, add a new server. Three ways to configure the 
 }
 ```
 
+Enable write mode explicitly:
+
+```json
+{
+  "mcpServers": {
+    "mysql": {
+      "command": "mcp-mysql-explorer",
+      "args": [
+        "--host", "your-mysql-host",
+        "--database", "your-database",
+        "--allow-write"
+      ]
+    }
+  }
+}
+```
+
 ### Option 2: Environment variables
 
 ```json
@@ -55,7 +74,8 @@ Open **Cursor Settings → MCP**, add a new server. Three ways to configure the 
         "MYSQL_PORT": "3306",
         "MYSQL_USER": "your-user",
         "MYSQL_PASSWORD": "your-password",
-        "MYSQL_DATABASE": "your-database"
+        "MYSQL_DATABASE": "your-database",
+        "MYSQL_READ_ONLY": "true"
       }
     }
   }
@@ -72,6 +92,7 @@ MYSQL_PORT=3306
 MYSQL_USER=your-user
 MYSQL_PASSWORD=your-password
 MYSQL_DATABASE=your-database
+MYSQL_READ_ONLY=true
 ```
 
 Then simply:
@@ -86,7 +107,7 @@ Then simply:
 }
 ```
 
-> **Priority**: command-line args > environment variables > `.env` file
+> Priority: command-line args > environment variables > `.env` file
 
 ## Usage in Claude Desktop
 
@@ -114,6 +135,9 @@ Add to your `claude_desktop_config.json`:
 # With command-line arguments
 mcp-mysql-explorer --host localhost --user root --password secret --database mydb
 
+# Explicitly allow write operations
+mcp-mysql-explorer --host localhost --user root --password secret --database mydb --allow-write
+
 # With .env file
 mcp-mysql-explorer
 
@@ -121,10 +145,25 @@ mcp-mysql-explorer
 python -m mcp_mysql_explorer --host localhost --database mydb
 ```
 
+## Testing
+
+```bash
+# Run unit tests (no real database needed)
+python scripts/run_tests.py
+```
+
+```bash
+# Optional manual smoke check (reads credentials from env only)
+# Required env: MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE
+python scripts/manual_smoke_check.py --mode both
+```
+
 ## Security Notes
 
 - The `query` tool only allows SELECT / SHOW / DESCRIBE / EXPLAIN statements.
-- The `execute_sql` tool can run write operations — use with caution.
+- Read-only mode is enabled by default (`MYSQL_READ_ONLY=true`).
+- To enable writes, set `MYSQL_READ_ONLY=false` or pass `--allow-write`.
+- The `execute_sql` tool can run write operations only when read-only mode is disabled.
 - Query results are capped at 1000 rows by default.
 - Table/column identifiers are backtick-wrapped to prevent SQL injection.
 

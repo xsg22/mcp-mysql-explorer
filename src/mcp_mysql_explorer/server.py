@@ -1,11 +1,29 @@
-import os
-import json
 import argparse
+import json
+import os
+
 import pymysql
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
 load_dotenv()
+
+
+def _parse_bool(value: str | bool | None, *, default: bool) -> bool:
+    """Parse a truthy/falsy value from args/env with a fallback default."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+
+    normalized = value.strip().lower()
+    truthy = {"1", "true", "yes", "y", "on"}
+    falsy = {"0", "false", "no", "n", "off"}
+    if normalized in truthy:
+        return True
+    if normalized in falsy:
+        return False
+    raise ValueError(f"Invalid boolean value: {value}")
 
 
 def _parse_args():
@@ -15,10 +33,28 @@ def _parse_args():
     parser.add_argument("--user", help="MySQL user")
     parser.add_argument("--password", help="MySQL password")
     parser.add_argument("--database", help="MySQL database name")
+    parser.add_argument(
+        "--read-only",
+        dest="read_only",
+        help="Enable or disable read-only mode (true/false). Default: true",
+    )
+    parser.add_argument(
+        "--allow-write",
+        action="store_true",
+        help="Shortcut for --read-only false.",
+    )
     return parser.parse_args()
 
 
 _args = _parse_args()
+READ_ONLY_MODE = (
+    False
+    if _args.allow_write
+    else _parse_bool(
+        _args.read_only,
+        default=_parse_bool(os.getenv("MYSQL_READ_ONLY"), default=True),
+    )
+)
 
 MYSQL_CONFIG = {
     "host": _args.host or os.getenv("MYSQL_HOST", "localhost"),
@@ -35,7 +71,10 @@ MAX_ROWS = 1000
 
 mcp = FastMCP(
     "MySQL Explorer",
-    instructions="MCP server for querying MySQL databases. Supports listing tables, describing schemas, and executing SQL.",
+    instructions=(
+        "MCP server for MySQL. Supports schema exploration and SQL execution. "
+        f"Current mode: {'read-only' if READ_ONLY_MODE else 'read-write'}."
+    ),
 )
 
 
@@ -51,9 +90,6 @@ def _format_rows(rows: list[dict], max_rows: int = MAX_ROWS) -> str:
     if len(rows) > max_rows:
         result += f"\n\n... truncated, showing {max_rows} of {len(rows)} rows"
     return result
-
-
-# ──────────────────────────── Tools ────────────────────────────
 
 
 @mcp.tool()
@@ -118,6 +154,8 @@ def query(sql: str) -> str:
     normalized = sql.strip().upper()
     allowed_prefixes = ("SELECT", "SHOW", "DESCRIBE", "DESC", "EXPLAIN")
     if not any(normalized.startswith(p) for p in allowed_prefixes):
+        if READ_ONLY_MODE:
+            return "Error: Read-only mode is enabled. Only SELECT / SHOW / DESCRIBE / EXPLAIN queries are allowed."
         return "Error: Only SELECT / SHOW / DESCRIBE / EXPLAIN queries are allowed. Use execute_sql for write operations."
 
     conn = _get_connection()
@@ -136,11 +174,17 @@ def query(sql: str) -> str:
 def execute_sql(sql: str) -> str:
     """Execute a write SQL statement (INSERT / UPDATE / DELETE / ALTER / CREATE / DROP, etc).
 
-    Use with caution — this modifies the database.
+    Use with caution: this modifies the database.
 
     Args:
         sql: The SQL statement to execute.
     """
+    if READ_ONLY_MODE:
+        return (
+            "Error: Server is running in read-only mode. "
+            "Write SQL is disabled. Set MYSQL_READ_ONLY=false or pass --allow-write to enable writes."
+        )
+
     conn = _get_connection()
     try:
         with conn.cursor() as cur:
@@ -151,7 +195,7 @@ def execute_sql(sql: str) -> str:
                 rows = cur.fetchall()
                 return _format_rows(rows)
 
-        return f"OK — {affected} row(s) affected."
+        return f"OK - {affected} row(s) affected."
     except Exception as e:
         conn.rollback()
         return f"Execution error: {e}"
@@ -227,17 +271,11 @@ def get_database_info() -> str:
         conn.close()
 
 
-# ──────────────────────────── Helpers ────────────────────────────
-
-
 def _safe_identifier(name: str) -> str:
     """Backtick-wrap a table/column name to prevent SQL injection in identifiers."""
     if "`" in name:
         raise ValueError(f"Invalid identifier: {name}")
     return f"`{name}`"
-
-
-# ──────────────────────────── Entry ────────────────────────────
 
 
 def main():
