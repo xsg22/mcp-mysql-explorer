@@ -24,7 +24,7 @@ pip install mcp-mysql-explorer
 
 ## Usage in Cursor
 
-Open **Cursor Settings -> MCP**, add a new server. Three ways to configure the database connection:
+Open **Cursor Settings -> MCP**, add a new server. Three ways to configure the database connection. SSH tunneling through a bastion/jump host is also supported.
 
 ### Option 1: Command-line arguments (recommended)
 
@@ -62,6 +62,31 @@ Enable write mode explicitly:
 }
 ```
 
+If the database is only reachable through an SSH bastion, add `--ssh-*` arguments:
+
+```json
+{
+  "mcpServers": {
+    "mysql": {
+      "command": "mcp-mysql-explorer",
+      "args": [
+        "--host", "mysql.internal",
+        "--port", "3306",
+        "--user", "your-db-user",
+        "--password", "your-db-password",
+        "--database", "your-database",
+        "--ssh-host", "bastion.example.com",
+        "--ssh-port", "22",
+        "--ssh-user", "your-ssh-user",
+        "--ssh-private-key", "/Users/you/.ssh/id_rsa"
+      ]
+    }
+  }
+}
+```
+
+> In SSH mode, `--host` / `MYSQL_HOST` is the MySQL address as seen from the SSH server. SSH tunneling is enabled automatically when `--ssh-host` or `MYSQL_SSH_HOST` is set. You can explicitly disable it with `--ssh-enabled false`.
+
 ### Option 2: Environment variables
 
 ```json
@@ -75,12 +100,30 @@ Enable write mode explicitly:
         "MYSQL_USER": "your-user",
         "MYSQL_PASSWORD": "your-password",
         "MYSQL_DATABASE": "your-database",
-        "MYSQL_READ_ONLY": "true"
+        "MYSQL_READ_ONLY": "true",
+        "MYSQL_SSH_HOST": "bastion.example.com",
+        "MYSQL_SSH_PORT": "22",
+        "MYSQL_SSH_USER": "your-ssh-user",
+        "MYSQL_SSH_PRIVATE_KEY": "/Users/you/.ssh/id_rsa"
       }
     }
   }
 }
 ```
+
+SSH environment variables:
+
+| Environment variable | Description |
+|----------------------|-------------|
+| `MYSQL_SSH_ENABLED` | Enable SSH tunneling (true/false). Defaults to enabled when `MYSQL_SSH_HOST` is set |
+| `MYSQL_SSH_HOST` | SSH bastion/jump host |
+| `MYSQL_SSH_PORT` | SSH port, defaults to `22` |
+| `MYSQL_SSH_USER` | SSH username |
+| `MYSQL_SSH_PASSWORD` | SSH password |
+| `MYSQL_SSH_PRIVATE_KEY` | Path to SSH private key |
+| `MYSQL_SSH_PRIVATE_KEY_PASSWORD` | SSH private key passphrase |
+| `MYSQL_SSH_LOCAL_HOST` | Local forwarding bind host, defaults to `127.0.0.1` |
+| `MYSQL_SSH_LOCAL_PORT` | Local forwarding bind port, defaults to `0` for automatic assignment |
 
 ### Option 3: `.env` file
 
@@ -93,6 +136,9 @@ MYSQL_USER=your-user
 MYSQL_PASSWORD=your-password
 MYSQL_DATABASE=your-database
 MYSQL_READ_ONLY=true
+MYSQL_SSH_HOST=bastion.example.com
+MYSQL_SSH_USER=your-ssh-user
+MYSQL_SSH_PRIVATE_KEY=/Users/you/.ssh/id_rsa
 ```
 
 Then simply:
@@ -137,6 +183,10 @@ mcp-mysql-explorer --host localhost --user root --password secret --database myd
 
 # Explicitly allow write operations
 mcp-mysql-explorer --host localhost --user root --password secret --database mydb --allow-write
+
+# Through an SSH bastion
+mcp-mysql-explorer --host mysql.internal --user root --password secret --database mydb \
+  --ssh-host bastion.example.com --ssh-user deploy --ssh-private-key ~/.ssh/id_rsa
 
 # With .env file
 mcp-mysql-explorer

@@ -21,6 +21,15 @@ MYSQL_ENV_KEYS = (
     "MYSQL_PASSWORD",
     "MYSQL_DATABASE",
     "MYSQL_READ_ONLY",
+    "MYSQL_SSH_ENABLED",
+    "MYSQL_SSH_HOST",
+    "MYSQL_SSH_PORT",
+    "MYSQL_SSH_USER",
+    "MYSQL_SSH_PASSWORD",
+    "MYSQL_SSH_PRIVATE_KEY",
+    "MYSQL_SSH_PRIVATE_KEY_PASSWORD",
+    "MYSQL_SSH_LOCAL_HOST",
+    "MYSQL_SSH_LOCAL_PORT",
 )
 
 
@@ -50,6 +59,24 @@ def make_connection_and_cursor():
     return conn, cur
 
 
+class FakeTunnelForwarder:
+    instances = []
+
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+        self.is_active = False
+        self.local_bind_host = "127.0.0.1"
+        self.local_bind_port = 4406
+        FakeTunnelForwarder.instances.append(self)
+
+    def start(self):
+        self.is_active = True
+
+    def stop(self):
+        self.is_active = False
+
+
 class ServerBehaviorTests(unittest.TestCase):
     def test_default_read_only_mode_enabled(self):
         server = load_server()
@@ -62,6 +89,84 @@ class ServerBehaviorTests(unittest.TestCase):
     def test_allow_write_cli_has_priority(self):
         server = load_server(argv=["--allow-write"], env_overrides={"MYSQL_READ_ONLY": "true"})
         self.assertFalse(server.READ_ONLY_MODE)
+
+    def test_ssh_tunnel_disabled_by_default(self):
+        server = load_server()
+        self.assertFalse(server.SSH_CONFIG["enabled"])
+
+    def test_ssh_tunnel_enabled_by_cli_host(self):
+        server = load_server(argv=["--ssh-host", "bastion.example.com", "--ssh-user", "deploy"])
+
+        self.assertTrue(server.SSH_CONFIG["enabled"])
+        self.assertEqual("bastion.example.com", server.SSH_CONFIG["host"])
+        self.assertEqual(22, server.SSH_CONFIG["port"])
+        self.assertEqual("deploy", server.SSH_CONFIG["user"])
+
+    def test_ssh_tunnel_cli_host_has_priority_over_disabled_env(self):
+        server = load_server(
+            argv=["--ssh-host", "bastion.example.com"],
+            env_overrides={"MYSQL_SSH_ENABLED": "false"},
+        )
+
+        self.assertTrue(server.SSH_CONFIG["enabled"])
+
+    def test_ssh_tunnel_enabled_by_env(self):
+        server = load_server(
+            env_overrides={
+                "MYSQL_SSH_HOST": "bastion.example.com",
+                "MYSQL_SSH_PORT": "2222",
+                "MYSQL_SSH_USER": "deploy",
+                "MYSQL_SSH_LOCAL_PORT": "33070",
+            }
+        )
+
+        self.assertTrue(server.SSH_CONFIG["enabled"])
+        self.assertEqual(2222, server.SSH_CONFIG["port"])
+        self.assertEqual(33070, server.SSH_CONFIG["local_port"])
+
+    def test_get_connection_uses_ssh_tunnel_local_endpoint(self):
+        server = load_server(
+            argv=[
+                "--host",
+                "db.internal",
+                "--port",
+                "3307",
+                "--ssh-host",
+                "bastion.example.com",
+                "--ssh-user",
+                "deploy",
+                "--ssh-local-port",
+                "0",
+            ]
+        )
+        FakeTunnelForwarder.instances = []
+        conn = MagicMock()
+
+        with patch.object(server, "_get_ssh_tunnel_forwarder_class", return_value=FakeTunnelForwarder):
+            with patch.object(server.pymysql, "connect", return_value=conn) as mock_connect:
+                result = server._get_connection()
+
+        self.assertIs(result, conn)
+        tunnel = FakeTunnelForwarder.instances[0]
+        self.assertEqual((("bastion.example.com", 22),), tunnel.args)
+        self.assertEqual(("db.internal", 3307), tunnel.kwargs["remote_bind_address"])
+        self.assertEqual(("127.0.0.1", 0), tunnel.kwargs["local_bind_address"])
+        self.assertEqual("deploy", tunnel.kwargs["ssh_username"])
+        mock_connect.assert_called_once()
+        connect_config = mock_connect.call_args.kwargs
+        self.assertEqual("127.0.0.1", connect_config["host"])
+        self.assertEqual(4406, connect_config["port"])
+
+    def test_ssh_tunnel_reuses_active_forwarder(self):
+        server = load_server(argv=["--ssh-host", "bastion.example.com"])
+        FakeTunnelForwarder.instances = []
+
+        with patch.object(server, "_get_ssh_tunnel_forwarder_class", return_value=FakeTunnelForwarder):
+            with patch.object(server.pymysql, "connect", return_value=MagicMock()):
+                server._get_connection()
+                server._get_connection()
+
+        self.assertEqual(1, len(FakeTunnelForwarder.instances))
 
     def test_query_blocks_write_sql_in_read_only(self):
         server = load_server()

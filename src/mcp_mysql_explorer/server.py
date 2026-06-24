@@ -1,6 +1,8 @@
 import argparse
+import atexit
 import json
 import os
+import threading
 
 import pymysql
 from dotenv import load_dotenv
@@ -43,6 +45,18 @@ def _parse_args():
         action="store_true",
         help="Shortcut for --read-only false.",
     )
+    parser.add_argument(
+        "--ssh-enabled",
+        help="Enable or disable SSH tunnel mode (true/false). Default: enabled when --ssh-host or MYSQL_SSH_HOST is set.",
+    )
+    parser.add_argument("--ssh-host", help="SSH bastion/jump host")
+    parser.add_argument("--ssh-port", type=int, help="SSH port")
+    parser.add_argument("--ssh-user", help="SSH user")
+    parser.add_argument("--ssh-password", help="SSH password")
+    parser.add_argument("--ssh-private-key", help="Path to SSH private key")
+    parser.add_argument("--ssh-private-key-password", help="SSH private key passphrase")
+    parser.add_argument("--ssh-local-host", help="Local host for SSH port forwarding")
+    parser.add_argument("--ssh-local-port", type=int, help="Local port for SSH port forwarding")
     return parser.parse_args()
 
 
@@ -67,7 +81,30 @@ MYSQL_CONFIG = {
     "connect_timeout": 10,
 }
 
+_ssh_enabled_default = _parse_bool(
+    os.getenv("MYSQL_SSH_ENABLED"),
+    default=bool(os.getenv("MYSQL_SSH_HOST")),
+)
+if _args.ssh_host:
+    _ssh_enabled_default = True
+
+SSH_CONFIG = {
+    "enabled": _parse_bool(_args.ssh_enabled, default=_ssh_enabled_default),
+    "host": _args.ssh_host or os.getenv("MYSQL_SSH_HOST", ""),
+    "port": _args.ssh_port or int(os.getenv("MYSQL_SSH_PORT", "22")),
+    "user": _args.ssh_user or os.getenv("MYSQL_SSH_USER", ""),
+    "password": _args.ssh_password or os.getenv("MYSQL_SSH_PASSWORD", ""),
+    "private_key": _args.ssh_private_key or os.getenv("MYSQL_SSH_PRIVATE_KEY", ""),
+    "private_key_password": _args.ssh_private_key_password
+    or os.getenv("MYSQL_SSH_PRIVATE_KEY_PASSWORD", ""),
+    "local_host": _args.ssh_local_host or os.getenv("MYSQL_SSH_LOCAL_HOST", "127.0.0.1"),
+    "local_port": _args.ssh_local_port
+    or int(os.getenv("MYSQL_SSH_LOCAL_PORT", "0")),
+}
+
 MAX_ROWS = 1000
+_SSH_TUNNEL = None
+_SSH_TUNNEL_LOCK = threading.Lock()
 
 mcp = FastMCP(
     "MySQL Explorer",
@@ -78,8 +115,68 @@ mcp = FastMCP(
 )
 
 
+def _get_ssh_tunnel_forwarder_class():
+    try:
+        from sshtunnel import SSHTunnelForwarder
+    except ImportError as exc:
+        raise RuntimeError(
+            "SSH tunnel mode requires the 'sshtunnel' package. "
+            "Install mcp-mysql-explorer with its latest dependencies."
+        ) from exc
+    return SSHTunnelForwarder
+
+
+def _ensure_ssh_tunnel():
+    global _SSH_TUNNEL
+    if not SSH_CONFIG["enabled"]:
+        return None
+
+    with _SSH_TUNNEL_LOCK:
+        if _SSH_TUNNEL and _SSH_TUNNEL.is_active:
+            return _SSH_TUNNEL
+
+        if not SSH_CONFIG["host"]:
+            raise ValueError("SSH tunnel mode is enabled, but SSH host is not configured.")
+
+        forwarder_cls = _get_ssh_tunnel_forwarder_class()
+        credentials = {}
+        if SSH_CONFIG["user"]:
+            credentials["ssh_username"] = SSH_CONFIG["user"]
+        if SSH_CONFIG["password"]:
+            credentials["ssh_password"] = SSH_CONFIG["password"]
+        if SSH_CONFIG["private_key"]:
+            credentials["ssh_pkey"] = SSH_CONFIG["private_key"]
+        if SSH_CONFIG["private_key_password"]:
+            credentials["ssh_private_key_password"] = SSH_CONFIG["private_key_password"]
+
+        tunnel = forwarder_cls(
+            (SSH_CONFIG["host"], SSH_CONFIG["port"]),
+            remote_bind_address=(MYSQL_CONFIG["host"], MYSQL_CONFIG["port"]),
+            local_bind_address=(SSH_CONFIG["local_host"], SSH_CONFIG["local_port"]),
+            **credentials,
+        )
+        tunnel.start()
+        _SSH_TUNNEL = tunnel
+        return _SSH_TUNNEL
+
+
+def _close_ssh_tunnel():
+    global _SSH_TUNNEL
+    if _SSH_TUNNEL:
+        _SSH_TUNNEL.stop()
+        _SSH_TUNNEL = None
+
+
 def _get_connection():
-    return pymysql.connect(**MYSQL_CONFIG)
+    tunnel = _ensure_ssh_tunnel()
+    connect_config = dict(MYSQL_CONFIG)
+    if tunnel:
+        connect_config["host"] = tunnel.local_bind_host
+        connect_config["port"] = tunnel.local_bind_port
+    return pymysql.connect(**connect_config)
+
+
+atexit.register(_close_ssh_tunnel)
 
 
 def _format_rows(rows: list[dict], max_rows: int = MAX_ROWS) -> str:

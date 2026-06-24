@@ -24,7 +24,7 @@ pip install mcp-mysql-explorer
 
 ## 在 Cursor 中使用
 
-打开 **Cursor 设置 -> MCP**，新增一个服务器。数据库连接支持三种配置方式。
+打开 **Cursor 设置 -> MCP**，新增一个服务器。数据库连接支持三种配置方式，也支持通过 SSH 代理/跳板机连接数据库。
 
 ### 方式一：命令行参数（推荐）
 
@@ -62,6 +62,31 @@ pip install mcp-mysql-explorer
 }
 ```
 
+如果数据库只能通过 SSH 跳板机访问，可以追加 `--ssh-*` 参数：
+
+```json
+{
+  "mcpServers": {
+    "mysql": {
+      "command": "mcp-mysql-explorer",
+      "args": [
+        "--host", "mysql.internal",
+        "--port", "3306",
+        "--user", "your-db-user",
+        "--password", "your-db-password",
+        "--database", "your-database",
+        "--ssh-host", "bastion.example.com",
+        "--ssh-port", "22",
+        "--ssh-user", "your-ssh-user",
+        "--ssh-private-key", "/Users/you/.ssh/id_rsa"
+      ]
+    }
+  }
+}
+```
+
+> 启用 SSH 模式后，`--host` / `MYSQL_HOST` 表示 SSH 服务器能访问到的 MySQL 地址。`--ssh-host` 或 `MYSQL_SSH_HOST` 存在时会自动启用 SSH 隧道，也可以用 `--ssh-enabled false` 显式关闭。
+
 ### 方式二：环境变量
 
 ```json
@@ -75,12 +100,30 @@ pip install mcp-mysql-explorer
         "MYSQL_USER": "your-user",
         "MYSQL_PASSWORD": "your-password",
         "MYSQL_DATABASE": "your-database",
-        "MYSQL_READ_ONLY": "true"
+        "MYSQL_READ_ONLY": "true",
+        "MYSQL_SSH_HOST": "bastion.example.com",
+        "MYSQL_SSH_PORT": "22",
+        "MYSQL_SSH_USER": "your-ssh-user",
+        "MYSQL_SSH_PRIVATE_KEY": "/Users/you/.ssh/id_rsa"
       }
     }
   }
 }
 ```
+
+SSH 相关环境变量：
+
+| 环境变量 | 说明 |
+|----------|------|
+| `MYSQL_SSH_ENABLED` | 是否启用 SSH 隧道（true/false）；未设置时由 `MYSQL_SSH_HOST` 自动决定 |
+| `MYSQL_SSH_HOST` | SSH 跳板机地址 |
+| `MYSQL_SSH_PORT` | SSH 端口，默认 `22` |
+| `MYSQL_SSH_USER` | SSH 用户名 |
+| `MYSQL_SSH_PASSWORD` | SSH 密码 |
+| `MYSQL_SSH_PRIVATE_KEY` | SSH 私钥路径 |
+| `MYSQL_SSH_PRIVATE_KEY_PASSWORD` | SSH 私钥密码 |
+| `MYSQL_SSH_LOCAL_HOST` | 本地转发监听地址，默认 `127.0.0.1` |
+| `MYSQL_SSH_LOCAL_PORT` | 本地转发端口，默认 `0`，表示自动分配 |
 
 ### 方式三：`.env` 文件
 
@@ -93,6 +136,9 @@ MYSQL_USER=your-user
 MYSQL_PASSWORD=your-password
 MYSQL_DATABASE=your-database
 MYSQL_READ_ONLY=true
+MYSQL_SSH_HOST=bastion.example.com
+MYSQL_SSH_USER=your-ssh-user
+MYSQL_SSH_PRIVATE_KEY=/Users/you/.ssh/id_rsa
 ```
 
 然后直接启动：
@@ -137,6 +183,10 @@ mcp-mysql-explorer --host localhost --user root --password secret --database myd
 
 # 显式开启可写模式
 mcp-mysql-explorer --host localhost --user root --password secret --database mydb --allow-write
+
+# 通过 SSH 跳板机连接
+mcp-mysql-explorer --host mysql.internal --user root --password secret --database mydb \
+  --ssh-host bastion.example.com --ssh-user deploy --ssh-private-key ~/.ssh/id_rsa
 
 # .env 方式
 mcp-mysql-explorer
